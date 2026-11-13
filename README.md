@@ -1,11 +1,13 @@
 # DSH Mobile
 
-把 DeepSeek Harness（DSH）搬到安卓上的两个产物：
+把 DeepSeek Harness（DSH）搬到安卓上的两个产物，均由 GitHub Actions 构建并发布：
+
+**下载地址：https://github.com/fenzirong/dsh-mobile/releases/latest**
 
 | 产物 | 包名 | 体积 | 说明 |
 | --- | --- | --- | --- |
-| `dist/DSH-Mobile-1.0.0-shell.apk` | `com.dsh.mobile` | ~2.9 MB | 纯前端外壳，连接 Termux 里的 DSH 主机 |
-| `termux/`（源码） | `com.dshapp` | ~120 MB（构建后） | 内置 Termux 的合并版，一个 APK 同时含终端与前端 |
+| `DSH-Mobile-shell.apk` | `com.dsh.mobile` | 2.8 MB | 纯前端外壳，连接 Termux 里的 DSH 主机 |
+| `DSH-Mobile-merged-arm64.apk` | `com.dshapp` | 36.8 MB | 内置 Termux 的合并版，一个 APK 同时含终端与前端（仅 arm64-v8a） |
 
 两者共用同一套前端逻辑：**DSH 的 Web GUI 原样跑在 WebView 里**，所以所有已安装的
 客户端插件（侧边栏、终端、文件、插件市场、日程、子代理……）都自动生效，不需要为安卓重写。
@@ -87,13 +89,28 @@ http://127.0.0.1:3090/?token=<launchToken>
 
 ### 构建
 
+推荐用 GitHub Actions（内存充足，NDK 编译稳定）：
+
+```bash
+git tag v1.0.4 && git push origin v1.0.4   # 触发构建并自动发布 Release
+```
+
+工作流：`.github/workflows/release.yml`，使用 runner 预装的 Android SDK，
+安装 `ndk;29.0.14206865` / `platforms;android-36` / `build-tools;35.0.0` 后分别构建两个 APK，
+打 tag 时用 `softprops/action-gh-release` 发布。
+
+本地构建（需 ≥ 4 GB 可用内存 + 充足磁盘 I/O）：
+
 ```bash
 cd termux
-# 需要：JDK 17、Android SDK platform 34、NDK 29.0.14206865、build-tools 34
+# 需要：JDK 17、SDK platform 36、build-tools 35.0.0、NDK 29.0.14206865
 ./gradlew assembleDebug
 ```
 
-产物：`termux/app/build/outputs/apk/debug/app-debug.apk`（仅 arm64-v8a）。
+产物：`termux/app/build/outputs/apk/debug/`（仅 arm64-v8a）。
+
+> 注：本仓库的开发环境磁盘仅 4.7 MB/s、内存 887 MB，本地构建合并版会因 I/O 与内存被拖死，
+> 因此合并版的构建与发布全部放在 CI 完成。
 
 > 注意：合并版与官方 Termux 不能共存（包名不同但 `sharedUserId` 与数据目录语义相同，
 > 且 bootstrap 前缀已改写）。安装前请先卸载官方 Termux。
