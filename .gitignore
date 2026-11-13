@@ -1,0 +1,18 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# 本地环境
+local.properties
+android-sdk/
+*.iml
+.idea/
+.DS_Store
+
+# 构建产物（dist/ 里的成品用于发布，保留）
+*.hprof
+hs_err_pid*.log
+
+# 本地构建产物（由 CI 产出）
+dist/

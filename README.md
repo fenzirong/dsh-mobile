@@ -1,0 +1,128 @@
+# DSH Mobile
+
+把 DeepSeek Harness（DSH）搬到安卓上的两个产物：
+
+| 产物 | 包名 | 体积 | 说明 |
+| --- | --- | --- | --- |
+| `dist/DSH-Mobile-1.0.0-shell.apk` | `com.dsh.mobile` | ~2.9 MB | 纯前端外壳，连接 Termux 里的 DSH 主机 |
+| `termux/`（源码） | `com.dshapp` | ~120 MB（构建后） | 内置 Termux 的合并版，一个 APK 同时含终端与前端 |
+
+两者共用同一套前端逻辑：**DSH 的 Web GUI 原样跑在 WebView 里**，所以所有已安装的
+客户端插件（侧边栏、终端、文件、插件市场、日程、子代理……）都自动生效，不需要为安卓重写。
+
+---
+
+## 一、为什么是「外壳 + 主机」而不是原生重写
+
+DSH 本体是 Node.js 服务，插件体系（Cordis）分宿主插件与客户端插件两层：
+
+- **宿主插件**跑在 Node 进程里，提供工具、模型、存储等能力；
+- **客户端插件**是打进 Web GUI 的前端 bundle，负责界面。
+
+安卓端要「支持各种插件」，唯一不丢功能的做法就是让真正的 DSH 主机跑起来，前端只做呈现。
+原生重写只能覆盖极小子集，且永远追不上插件生态。
+
+---
+
+## 二、鉴权机制（外壳能连上的关键）
+
+`dsh web` 启动后会打印形如：
+
+```
+http://127.0.0.1:3090/?token=<launchToken>
+```
+
+访问该 URL 时，服务端校验 `token` 查询参数，种下绑定 `host:port` 的签名 Cookie，
+然后 303 跳转到干净的 `./`。之后所有请求靠 Cookie 鉴权。
+
+因此外壳的做法是：
+
+1. 用户粘贴这条完整 URL（或只粘贴 token）；
+2. WebView 加载它 → 自动换 Cookie → 落到正常界面；
+3. Cookie 由 `CookieManager` 持久化，下次启动直接可用；
+4. 令牌随 `dsh web` 进程变化，重启后旧 Cookie 失效 → 服务端返回 401 →
+   外壳捕获主框架 401，弹出重新授权面板。
+
+---
+
+## 三、外壳版使用步骤
+
+1. 安装 Termux（F-Droid 版）。
+2. 在 Termux 中：
+
+   ```bash
+   pkg update
+   pkg install nodejs-lts
+   npm i -g @deepseek-ai/dsh
+   dsh web
+   ```
+
+3. 复制它打印的 `http://127.0.0.1:3090/?token=...`。
+4. 打开 DSH Mobile → 「粘贴」→「连接」。
+
+外壳还支持：
+
+- **启动后端**：通过 Termux 的 `RUN_COMMAND` 服务在后台拉起 `dsh web`
+  （需在 `~/.termux/termux.properties` 设 `allow-external-apps=true`）；
+- **桌面模式**：按 980px 视口渲染再整体缩放，得到与桌面一致的布局，可双指缩放；
+- 文件上传（附件）、下载（交付物）、外链跳转、摄像头/麦克风授权（语音输入插件）。
+
+---
+
+## 四、合并版（内置 Termux）
+
+`termux/` 是 termux-app 源码的改造版，改动点：
+
+1. **包名** `com.termux` → `com.dshapp`；
+2. **bootstrap 前缀改写**：Termux 的二进制里把 `/data/data/com.termux/files/usr`
+   写死了，所以必须同步改写。这里选了与 `com.termux` **等长（10 字符）** 的
+   `com.dshapp`，对 bootstrap 做等长字节替换，避免破坏 ELF 内部偏移；
+3. **内置 bootstrap**：改写后的 `bootstrap-aarch64.zip` 放进 `app/src/main/cpp/`，
+   构建时直接编进 `libtermux-bootstrap.so`，首次启动离线解压，无需联网；
+4. **新增 `DshActivity`** 作为唯一启动入口（前端），`TermuxActivity` 保留为终端；
+5. **软件源镜像**：菜单里可一键切换官方 / 清华 / 中科大 / 北外 / 南大 / 哈工大 / 山大，
+   直接改写 `$PREFIX/etc/apt/sources.list`；
+6. **启动后端**：直接向自己的 `TermuxService` 投递 `ACTION_SERVICE_EXECUTE`，
+   在终端会话里跑 `dsh web`，不需要 `RUN_COMMAND` 权限。
+
+### 构建
+
+```bash
+cd termux
+# 需要：JDK 17、Android SDK platform 34、NDK 29.0.14206865、build-tools 34
+./gradlew assembleDebug
+```
+
+产物：`termux/app/build/outputs/apk/debug/app-debug.apk`（仅 arm64-v8a）。
+
+> 注意：合并版与官方 Termux 不能共存（包名不同但 `sharedUserId` 与数据目录语义相同，
+> 且 bootstrap 前缀已改写）。安装前请先卸载官方 Termux。
+
+---
+
+## 五、目录结构
+
+```
+dsh-mobile/
+├── android/                 # 外壳版工程（com.dsh.mobile）
+│   ├── app/src/main/java/com/dsh/mobile/
+│   │   ├── MainActivity.java    # WebView 外壳、鉴权、401 重授权、下载/上传
+│   │   ├── Prefs.java           # 连接配置持久化
+│   │   └── TermuxBridge.java    # RUN_COMMAND 拉起后端
+│   └── keystore/debug.keystore  # 工作区内调试签名
+├── termux/                  # 合并版工程（com.dshapp）
+│   ├── app/src/main/java/com/termux/app/DshActivity.java
+│   ├── app/src/main/java/com/dsh/mobile/{DshPrefs,DshMirrors,DshBackend}.java
+│   ├── app/src/main/cpp/bootstrap-aarch64.zip   # 已改写前缀
+│   └── ...
+└── dist/                    # 构建产物
+```
+
+---
+
+## 六、已知限制
+
+- 合并版只打 `arm64-v8a`（现代手机通用），如需 32 位需另备对应 bootstrap；
+- 令牌与 `dsh web` 进程同生命周期，重启后端需重新粘贴 URL；
+- 桌面模式在窄屏上文字偏小，建议配合双指缩放；
+- 合并版对 Termux 上游的改动集中在包名与 bootstrap 前缀，升级上游时需重做这两步。
