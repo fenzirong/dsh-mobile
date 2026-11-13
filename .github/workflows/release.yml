@@ -57,8 +57,18 @@ jobs:
         run: |
           set -e
           mkdir -p out
-          cp android/app/build/outputs/apk/debug/app-debug.apk out/DSH-Mobile-shell.apk
-          cp termux/app/build/outputs/apk/debug/app-debug.apk out/DSH-Mobile-merged-arm64.apk
+          echo "--- 外壳产物:"; find android/app/build/outputs/apk -name '*.apk' -print
+          echo "--- 合并版产物:"; find termux/app/build/outputs/apk -name '*.apk' -print
+
+          SHELL_APK=$(find android/app/build/outputs/apk -name '*.apk' | sort | head -1)
+          MERGED_APK=$(find termux/app/build/outputs/apk -name '*.apk' | sort | head -1)
+
+          [ -n "$SHELL_APK" ]  || { echo "未找到外壳 APK"; exit 1; }
+          [ -n "$MERGED_APK" ] || { echo "未找到合并版 APK"; exit 1; }
+
+          cp "$SHELL_APK"  out/DSH-Mobile-shell.apk
+          cp "$MERGED_APK" out/DSH-Mobile-merged-arm64.apk
+
           cd out && sha256sum *.apk > SHA256SUMS.txt && cat SHA256SUMS.txt && ls -lh
 
       - name: Upload artifacts
