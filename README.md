@@ -112,8 +112,45 @@ cd termux
 > 注：本仓库的开发环境磁盘仅 4.7 MB/s、内存 887 MB，本地构建合并版会因 I/O 与内存被拖死，
 > 因此合并版的构建与发布全部放在 CI 完成。
 
-> 注意：合并版与官方 Termux 不能共存（包名不同但 `sharedUserId` 与数据目录语义相同，
-> 且 bootstrap 前缀已改写）。安装前请先卸载官方 Termux。
+### 与官方 Termux 共存：前缀改写钩子
+
+合并版包名是 `com.dshapp`，数据目录 `/data/data/com.dshapp`，与官方 Termux 的
+`/data/data/com.termux` 完全隔离，两者可以同时安装。
+
+但 Termux 官方仓库的软件包把 `/data/data/com.termux/files/usr` **硬编码**进了
+脚本 shebang、ELF 的 `RUNPATH` 和默认路径。例如 `nodejs-lts` 包里有 37 个文件带这个前缀，
+`node` 的 `RUNPATH` 直接指向 `/data/data/com.termux/files/usr/lib`——直接装进
+`com.dshapp` 会得到一个起不来的 node。
+
+解决办法是在 **dpkg 安装前**改写包内容：
+
+```
+apt 下载 .deb → DPkg::Pre-Invoke 触发 dsh-fixdeb
+  → dpkg-deb -R 解包
+  → 把包内路径 data/data/com.termux 改名为 data/data/com.dshapp
+  → dshfix 把文件内容里的 com.termux 等长替换为 com.dshapp（二进制安全）
+  → dpkg-deb -b -Zxz --root-owner-group 重新打包
+  → dpkg 安装已适配的包
+```
+
+必须在安装前做：dpkg 会直接 `execve` 执行 `preinst`/`postinst`，若 shebang 仍指向
+`/data/data/com.termux/...` 就会 `ENOENT`，安装直接失败。
+
+之所以能等长替换：`com.termux` 与 `com.dshapp` 都是 10 字节，替换不会破坏 ELF 内部偏移。
+
+相关文件：
+
+| 文件 | 作用 |
+| --- | --- |
+| `termux/tools/dshfix.c` | 二进制安全的等长替换工具（静态编译进 bootstrap） |
+| `termux/tools/dsh-fixdeb` | apt 的 `DPkg::Pre-Invoke` 钩子脚本 |
+| `termux/tools/99dsh-prefix` | 注册钩子的 apt 配置 |
+| `termux/tools/build-bootstrap.py` | 从官方 bootstrap 重新生成内置 bootstrap |
+
+钩子日志：`$PREFIX/tmp/dsh-fixdeb.log`。
+
+> 局限：被压缩的文件（如 `.gz` man page、`.pyc`）里的路径不会被改写，属于非关键内容；
+> 若某个包解包或重打包失败，钩子会跳过它并记日志，该包可能无法运行。
 
 ---
 

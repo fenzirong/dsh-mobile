@@ -1,0 +1,2 @@
+// 在 dpkg 安装前改写 .deb 内的 com.termux 前缀，使官方仓库的包能在 com.dshapp 下运行。
+DPkg::Pre-Invoke { "/data/data/com.dshapp/files/usr/bin/dsh-fixdeb"; };
