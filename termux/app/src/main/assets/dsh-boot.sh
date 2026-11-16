@@ -42,8 +42,10 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
     apt-get update -y >> "$LOG" 2>&1 || { step 'error:apt-update'; exit 1; }
 
     step install-node
-    DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs-lts npm >> "$LOG" 2>&1 \
-        || { step 'error:install-node'; exit 1; }
+    # --no-install-recommends：npm 是 nodejs-lts 的 Recommends，但我们显式装了，
+    # 少拉一个包就少一次 .deb 改写。
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        nodejs-lts npm >> "$LOG" 2>&1 || { step 'error:install-node'; exit 1; }
 fi
 
 if ! command -v dsh >/dev/null 2>&1; then

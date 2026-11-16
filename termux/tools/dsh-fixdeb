@@ -7,10 +7,15 @@
 #   2. 把包内路径 data/data/com.termux 改名为 data/data/com.dshapp
 #   3. 把文件内容里的 com.termux 就地改写为 com.dshapp（等长，二进制安全）
 #   4. 丢弃 md5sums（内容已变，保留会误导 dpkg --verify）
-#   5. 重新打包（dpkg-deb -b -Zxz --root-owner-group）
+#   5. 重新打包
 #
 # 必须在「安装前」做：dpkg 会直接 execve 执行 preinst/postinst，若 shebang 仍指向
 # /data/data/com.termux/... 就会 ENOENT，安装直接失败。
+#
+# 性能要点：
+#   * 重打包用 gzip -1 而不是 xz。实测 nodejs 包 xz -6 要 45.8s，gzip -1 只要 1.3s。
+#     这个 .deb 只是给 dpkg 立刻消费的临时产物，体积变大无所谓。
+#   * 没有实际改动（既没改名也没改写任何文件）时直接跳过重打包，用原包。
 set -u
 
 PREFIX=/data/data/com.dshapp/files/usr
@@ -25,33 +30,45 @@ log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG" 2>/dev/null; }
 
 shopt -s nullglob
 for deb in "$CACHE"/*.deb; do
+    name="${deb##*/}"
     work="$PREFIX/tmp/dshdeb.$$"
     rm -rf "$work"
     mkdir -p "$work" || continue
 
+    t0=$(date +%s%N 2>/dev/null || echo 0)
+
     if ! dpkg-deb -R "$deb" "$work" 2>/dev/null; then
-        log "skip (extract failed): $deb"
+        log "skip (extract failed): $name"
         rm -rf "$work"
         continue
     fi
 
-    # 包内绝对路径：./data/data/com.termux/files/usr/...
+    renamed=0
     if [ -d "$work/data/data/com.termux" ]; then
-        mv "$work/data/data/com.termux" "$work/data/data/com.dshapp" 2>/dev/null
+        mv "$work/data/data/com.termux" "$work/data/data/com.dshapp" 2>/dev/null && renamed=1
     fi
 
-    "$FIXER" "$work" >/dev/null 2>&1
+    fixed=$("$FIXER" "$work" 2>/dev/null | sed -n 's/.*: \([0-9][0-9]*\) file.*/\1/p')
+    fixed=${fixed:-0}
+
+    if [ "$renamed" = "0" ] && [ "$fixed" = "0" ]; then
+        log "unchanged, kept original: $name"
+        rm -rf "$work"
+        continue
+    fi
+
     rm -f "$work/DEBIAN/md5sums"
     # dpkg-deb -R 解出的维护脚本可能丢失可执行位，重新打包前补回
     chmod 755 "$work"/DEBIAN/preinst "$work"/DEBIAN/postinst \
               "$work"/DEBIAN/prerm "$work"/DEBIAN/postrm 2>/dev/null
 
-    if dpkg-deb -b -Zxz --root-owner-group "$work" "$deb.new" >/dev/null 2>&1; then
+    if dpkg-deb -b -Zgzip -z1 --root-owner-group "$work" "$deb.new" >/dev/null 2>&1; then
         mv -f "$deb.new" "$deb" 2>/dev/null || rm -f "$deb.new"
-        log "rewritten: $deb"
+        t1=$(date +%s%N 2>/dev/null || echo 0)
+        log "rewritten in $(( (t1 - t0) / 1000000 ))ms, $fixed files: $name"
     else
         rm -f "$deb.new"
-        log "skip (repack failed): $deb"
+        log "skip (repack failed): $name"
     fi
     rm -rf "$work"
 done

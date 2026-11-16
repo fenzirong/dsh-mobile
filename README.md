@@ -171,9 +171,15 @@ apt 下载 .deb → DPkg::Pre-Invoke 触发 dsh-fixdeb
   → dpkg-deb -R 解包
   → 把包内路径 data/data/com.termux 改名为 data/data/com.dshapp
   → dshfix 把文件内容里的 com.termux 等长替换为 com.dshapp（二进制安全）
-  → dpkg-deb -b -Zxz --root-owner-group 重新打包
+  → dpkg-deb -b -Zgzip -z1 --root-owner-group 重新打包
   → dpkg 安装已适配的包
 ```
+
+**为什么用 gzip -1 而不是 xz**：实测重打包 nodejs 包（48 MB 数据），
+`xz -6` 要 **45.8 s**，`gzip -1` 只要 **1.3 s**，快 35 倍。这个 .deb 只是给 dpkg
+立刻消费的临时产物，体积从 9.6 MB 变成 17 MB 完全无所谓。首次安装十来个包，
+重打包总耗时从约 8 分钟降到约 30 秒。没有实际改动（既没改名也没改写任何文件）的包
+还会直接跳过重打包。
 
 必须在安装前做：dpkg 会直接 `execve` 执行 `preinst`/`postinst`，若 shebang 仍指向
 `/data/data/com.termux/...` 就会 `ENOENT`，安装直接失败。

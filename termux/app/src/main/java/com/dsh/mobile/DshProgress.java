@@ -31,7 +31,7 @@ public final class DshProgress {
     private static final int[] BASE = {0, 5, 12, 15, 32, 62, 86};
     private static final int[] CAP = {5, 12, 15, 32, 62, 86, 95};
     /** 各阶段的"时间常数"：越大表示这一阶段预期越久，爬升越慢。 */
-    private static final long[] TAU_MS = {1000L, 3000L, 1000L, 25000L, 75000L, 60000L, 12000L};
+    private static final long[] TAU_MS = {1000L, 3000L, 1000L, 25000L, 90000L, 45000L, 12000L};
 
     private static final long TICK_MS = 300L;
 
