@@ -44,6 +44,7 @@ import com.dsh.mobile.DshLauncher;
 import com.dsh.mobile.DshMirrors;
 import com.dsh.mobile.DshProgress;
 import com.dsh.mobile.DshPrefs;
+import com.dsh.mobile.MirrorBenchmark;
 import com.termux.R;
 import com.termux.shared.termux.file.TermuxFileUtils;
 
@@ -174,14 +175,11 @@ public class DshActivity extends AppCompatActivity {
         progressModel.reset();
         setStatus("正在检查运行环境…");
 
-        launcher.reuseOrStart(prefs.mirrorUrl(), new DshLauncher.Listener() {
+        // 已有实例在跑就直接连，省掉测速与启动
+        launcher.reuseIfRunning(new DshLauncher.Listener() {
             @Override
             public void onStatus(String code) {
-                progressModel.setStage(code);
-                setStatus(statusText(code));
-                if (code.startsWith("error:") || code.equals("stopped")) {
-                    resetStartButton();
-                }
+                benchmarkThenStart();
             }
 
             @Override
@@ -198,6 +196,50 @@ public class DshActivity extends AppCompatActivity {
             }
         });
     }
+
+    /** 并行测速所有镜像源，挑最快的那个交给启动脚本。 */
+    private void benchmarkThenStart() {
+        progressModel.setStage("bench");
+        setStatus("正在测速镜像源…");
+
+        MirrorBenchmark.run(DshMirrors.MIRRORS, (best, all) -> {
+            String mirror;
+            if (best != null) {
+                mirror = best.url;
+                prefs.setMirrorUrl(mirror);
+                setStatus("最快镜像：" + best.name + "（" + best.millis + " ms）");
+            } else {
+                mirror = prefs.mirrorUrl();
+                setStatus("镜像测速失败，改用默认源");
+            }
+            launcher.start(mirror, startListener);
+        });
+    }
+
+    /** 启动脚本的阶段回调。 */
+    private final DshLauncher.Listener startListener = new DshLauncher.Listener() {
+        @Override
+        public void onStatus(String code) {
+            progressModel.setStage(code);
+            setStatus(statusText(code));
+            if (code.startsWith("error:") || code.equals("stopped")) {
+                resetStartButton();
+            }
+        }
+
+        @Override
+        public void onReady(String url) {
+            progressModel.finish();
+            resetStartButton();
+            connectTo(url);
+        }
+
+        @Override
+        public void onProblem(String message) {
+            resetStartButton();
+            setStatus(message);
+        }
+    };
 
     private void resetStartButton() {
         startButton.setEnabled(true);
@@ -620,7 +662,7 @@ public class DshActivity extends AppCompatActivity {
             names[i] = mirrors[i].name;
         }
         new AlertDialog.Builder(this)
-                .setTitle("软件源镜像")
+                .setTitle("软件源镜像（启动时自动测速选最快）")
                 .setItems(names, (dialog, which) -> {
                     try {
                         String line = DshMirrors.apply(mirrors[which].url);
@@ -628,7 +670,8 @@ public class DshActivity extends AppCompatActivity {
                         new AlertDialog.Builder(this)
                                 .setTitle("已切换镜像")
                                 .setMessage("已写入：\n" + line
-                                        + "\n\n下次「一键启动」会自动使用该镜像。")
+                                        + "\n\n注意：点「一键启动」时仍会重新测速并选用最快的镜像，"
+                                        + "此处设置只影响终端里手动执行的 pkg/apt。")
                                 .setPositiveButton("知道了", null)
                                 .show();
                     } catch (Exception e) {

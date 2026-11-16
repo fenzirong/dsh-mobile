@@ -91,9 +91,14 @@ http://127.0.0.1:3090/?token=<launchToken>
 首次打开只需点一次「一键启动」，App 会自动完成整条链路：
 
 ```
-检查环境 → 写入镜像源（若已选） → apt update → 装 nodejs-lts + npm
-        → npm i -g @deepseek-ai/dsh → 启动 dsh web → 抓取 token URL → 加载界面
+检查环境 → 并行测速镜像源（选最快） → 写入 sources.list → apt update
+        → 装 nodejs-lts + npm → npm i -g @deepseek-ai/dsh
+        → 启动 dsh web → 抓取 token URL → 加载界面
 ```
+
+**镜像测速**：并行请求每个镜像的 `dists/stable/Release`（apt 仓库里十几 KB 的元数据），
+以「建连 + 首字节 + 读完」的耗时排名，最短者胜出。4 s 超时、8 s 整体兜底，
+全部失败则回退到用户上次选择的源。测速结果会写回偏好，界面上显示「最快镜像：清华 TUNA（320 ms）」。
 
 实现方式：
 
@@ -109,12 +114,13 @@ http://127.0.0.1:3090/?token=<launchToken>
 
 | 阶段 | 进度区间 |
 | --- | --- |
-| check | 0 → 8% |
-| mirror | 8 → 12% |
-| apt-update | 12 → 30% |
-| install-node | 30 → 60% |
-| install-dsh | 60 → 85% |
-| start | 85 → 95% |
+| check | 0 → 5% |
+| bench（测速） | 5 → 12% |
+| mirror | 12 → 15% |
+| apt-update | 15 → 32% |
+| install-node | 32 → 62% |
+| install-dsh | 62 → 86% |
+| start | 86 → 95% |
 | 完成 | 100% |
 
 阶段内按 `1 - e^(-t/τ)` 逼近本段上限（永远差一格），进入下一阶段时跳到下一段起点，
