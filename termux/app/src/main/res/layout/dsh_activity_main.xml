@@ -81,11 +81,40 @@
                 android:text="一键启动"
                 android:textSize="17sp" />
 
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ProgressBar
+                    android:id="@+id/dsh_progress_bar"
+                    style="?android:attr/progressBarStyleHorizontal"
+                    android:layout_width="0dp"
+                    android:layout_height="6dp"
+                    android:layout_weight="1"
+                    android:indeterminate="false"
+                    android:max="100"
+                    android:progress="0"
+                    android:progressBackgroundTint="@color/dsh_surface2"
+                    android:progressTint="@color/dsh_accent" />
+
+                <TextView
+                    android:id="@+id/dsh_percent"
+                    android:layout_width="56dp"
+                    android:layout_height="wrap_content"
+                    android:gravity="end"
+                    android:text="0%"
+                    android:textColor="@color/dsh_muted"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
             <TextView
                 android:id="@+id/dsh_status"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
+                android:layout_marginTop="12dp"
                 android:lineSpacingExtra="4dp"
                 android:minHeight="48dp"
                 android:textColor="@color/dsh_muted"

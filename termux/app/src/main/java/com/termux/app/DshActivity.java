@@ -42,6 +42,7 @@ import androidx.core.content.ContextCompat;
 
 import com.dsh.mobile.DshLauncher;
 import com.dsh.mobile.DshMirrors;
+import com.dsh.mobile.DshProgress;
 import com.dsh.mobile.DshPrefs;
 import com.termux.R;
 import com.termux.shared.termux.file.TermuxFileUtils;
@@ -66,6 +67,9 @@ public class DshActivity extends AppCompatActivity {
 
     private WebView webView;
     private ProgressBar progress;
+    private ProgressBar startBar;
+    private TextView percentView;
+    private DshProgress progressModel;
     private View webContainer;
     private View setupPanel;
     private View manualPanel;
@@ -87,9 +91,12 @@ public class DshActivity extends AppCompatActivity {
 
         prefs = new DshPrefs(this);
         launcher = new DshLauncher(this);
+        progressModel = new DshProgress(this::applyProgress);
 
         webView = findViewById(R.id.dsh_webview);
         progress = findViewById(R.id.dsh_progress);
+        startBar = findViewById(R.id.dsh_progress_bar);
+        percentView = findViewById(R.id.dsh_percent);
         webContainer = findViewById(R.id.dsh_web_container);
         setupPanel = findViewById(R.id.dsh_setup_panel);
         manualPanel = findViewById(R.id.dsh_manual_panel);
@@ -115,10 +122,12 @@ public class DshActivity extends AppCompatActivity {
     private void ensureBootstrap() {
         try {
             if (TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
+                progressModel.indeterminate();
                 setStatus("正在初始化 Termux 运行环境，请稍候…");
                 TermuxInstaller.setupBootstrapIfNeeded(this, () -> runOnUiThread(() -> {
                     bootstrapReady = true;
                     startButton.setEnabled(true);
+                    progressModel.reset();
                     setStatus("环境已就绪，点「一键启动」即可。");
                     autoReuse();
                 }));
@@ -162,11 +171,13 @@ public class DshActivity extends AppCompatActivity {
         }
         startButton.setEnabled(false);
         startButton.setText("启动中…");
+        progressModel.reset();
         setStatus("正在检查运行环境…");
 
         launcher.reuseOrStart(prefs.mirrorUrl(), new DshLauncher.Listener() {
             @Override
             public void onStatus(String code) {
+                progressModel.setStage(code);
                 setStatus(statusText(code));
                 if (code.startsWith("error:") || code.equals("stopped")) {
                     resetStartButton();
@@ -175,6 +186,7 @@ public class DshActivity extends AppCompatActivity {
 
             @Override
             public void onReady(String url) {
+                progressModel.finish();
                 resetStartButton();
                 connectTo(url);
             }
@@ -699,6 +711,20 @@ public class DshActivity extends AppCompatActivity {
         statusView.setText(message);
     }
 
+    /** 渲染进度：-1 表示不确定进度。 */
+    private void applyProgress(int percent) {
+        if (percent < 0) {
+            startBar.setIndeterminate(true);
+            percentView.setText("…");
+            return;
+        }
+        if (startBar.isIndeterminate()) {
+            startBar.setIndeterminate(false);
+        }
+        startBar.setProgress(percent);
+        percentView.setText(percent + "%");
+    }
+
     private void toast(String message) {
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show();
     }
@@ -755,6 +781,7 @@ public class DshActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         launcher.stop();
+        progressModel.release();
         if (webView != null) {
             webView.destroy();
         }
