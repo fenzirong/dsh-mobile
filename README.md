@@ -84,8 +84,28 @@ http://127.0.0.1:3090/?token=<launchToken>
 4. **新增 `DshActivity`** 作为唯一启动入口（前端），`TermuxActivity` 保留为终端；
 5. **软件源镜像**：菜单里可一键切换官方 / 清华 / 中科大 / 北外 / 南大 / 哈工大 / 山大，
    直接改写 `$PREFIX/etc/apt/sources.list`；
-6. **启动后端**：直接向自己的 `TermuxService` 投递 `ACTION_SERVICE_EXECUTE`，
-   在终端会话里跑 `dsh web`，不需要 `RUN_COMMAND` 权限。
+6. **一键启动**：见下节。
+
+### 一键启动
+
+首次打开只需点一次「一键启动」，App 会自动完成整条链路：
+
+```
+检查环境 → 写入镜像源（若已选） → apt update → 装 nodejs-lts + npm
+        → npm i -g @deepseek-ai/dsh → 启动 dsh web → 抓取 token URL → 加载界面
+```
+
+实现方式：
+
+- `assets/dsh-boot.sh` 由 App 释放到 `$PREFIX/tmp/dsh-boot.sh`；
+- 通过 `TermuxService` 的 **app-shell** runner 在后台执行（不占终端会话，
+  App 退到后台也不会被回收）；
+- 脚本把阶段码写进 `dsh-boot.status`，把 `dsh web` 的输出写进 `dsh-web.log`；
+- `DshLauncher` 每 800 ms 轮询这两个文件，解析出 `?token=...` 的地址后直接加载；
+- 若后端已在运行（端口在监听且日志里有 token），打开 App 会**自动复用**，连按钮都不用点。
+
+失败时状态栏会显示具体阶段（如 `error:install-node`），可点「打开终端」查看
+`$PREFIX/tmp/dsh-boot.log`，或切换软件源镜像后重试。
 
 ### 构建
 

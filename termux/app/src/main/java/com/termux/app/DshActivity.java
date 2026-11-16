@@ -27,6 +27,7 @@ import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.PopupMenu;
 import android.widget.ProgressBar;
@@ -39,11 +40,10 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
-import com.termux.R;
-import com.dsh.mobile.DshBackend;
+import com.dsh.mobile.DshLauncher;
 import com.dsh.mobile.DshMirrors;
 import com.dsh.mobile.DshPrefs;
-import com.termux.shared.termux.TermuxConstants;
+import com.termux.R;
 import com.termux.shared.termux.file.TermuxFileUtils;
 
 import java.util.ArrayList;
@@ -52,8 +52,9 @@ import java.util.List;
 /**
  * 合并版入口：DSH 前端 + 内置 Termux 运行时。
  *
- * <p>首次启动会解压内置的 bootstrap（已改写为 com.dshapp 前缀），之后即可在终端里
- * 安装 Node 与 DSH，并通过本页的 WebView 使用完整 Web GUI 与全部插件。
+ * <p>首次启动解压内置 bootstrap，之后「一键启动」会自动完成
+ * 装 Node → 装 DSH → 起 dsh web → 抓取带 token 的地址 → 加载界面，
+ * 用户全程只需点一次按钮。
  */
 public class DshActivity extends AppCompatActivity {
 
@@ -61,10 +62,15 @@ public class DshActivity extends AppCompatActivity {
     private static final int REQ_WEB_PERMISSIONS = 2002;
 
     private DshPrefs prefs;
+    private DshLauncher launcher;
+
     private WebView webView;
     private ProgressBar progress;
     private View webContainer;
     private View setupPanel;
+    private View manualPanel;
+    private Button startButton;
+    private Button manualButton;
     private EditText baseUrlInput;
     private EditText tokenInput;
     private TextView statusView;
@@ -72,6 +78,7 @@ public class DshActivity extends AppCompatActivity {
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest pendingPermissionRequest;
     private boolean authFailed;
+    private boolean bootstrapReady;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -79,10 +86,15 @@ public class DshActivity extends AppCompatActivity {
         setContentView(R.layout.dsh_activity_main);
 
         prefs = new DshPrefs(this);
+        launcher = new DshLauncher(this);
+
         webView = findViewById(R.id.dsh_webview);
         progress = findViewById(R.id.dsh_progress);
         webContainer = findViewById(R.id.dsh_web_container);
         setupPanel = findViewById(R.id.dsh_setup_panel);
+        manualPanel = findViewById(R.id.dsh_manual_panel);
+        startButton = findViewById(R.id.dsh_btn_start);
+        manualButton = findViewById(R.id.dsh_btn_manual);
         baseUrlInput = findViewById(R.id.dsh_input_base_url);
         tokenInput = findViewById(R.id.dsh_input_token);
         statusView = findViewById(R.id.dsh_status);
@@ -91,11 +103,13 @@ public class DshActivity extends AppCompatActivity {
         tokenInput.setText(prefs.token());
 
         setupWebView();
-        wireSetupUi();
+        wireUi();
         showSetup(null);
 
         ensureBootstrap();
     }
+
+    // ------------------------------------------------------------ 首次初始化
 
     /** 首次启动解压内置 bootstrap；已安装则直接进入。 */
     private void ensureBootstrap() {
@@ -103,11 +117,10 @@ public class DshActivity extends AppCompatActivity {
             if (TermuxFileUtils.isTermuxPrefixDirectoryEmpty()) {
                 setStatus("正在初始化 Termux 运行环境，请稍候…");
                 TermuxInstaller.setupBootstrapIfNeeded(this, () -> runOnUiThread(() -> {
-                    setStatus("环境已就绪。请先在终端中安装 Node 与 DSH。");
-                    if (prefs.configured()) {
-                        showWeb();
-                        loadEntry();
-                    }
+                    bootstrapReady = true;
+                    startButton.setEnabled(true);
+                    setStatus("环境已就绪，点「一键启动」即可。");
+                    autoReuse();
                 }));
                 return;
             }
@@ -115,10 +128,114 @@ public class DshActivity extends AppCompatActivity {
             setStatus("环境检查失败：" + e.getMessage());
             return;
         }
-        if (prefs.configured()) {
-            showWeb();
-            loadEntry();
+        bootstrapReady = true;
+        startButton.setEnabled(true);
+        autoReuse();
+    }
+
+    /** 若后端已在运行，直接连上，省掉一次点击。 */
+    private void autoReuse() {
+        launcher.reuseIfRunning(new DshLauncher.Listener() {
+            @Override
+            public void onStatus(String code) {
+                setStatus("点「一键启动」开始。");
+            }
+
+            @Override
+            public void onReady(String url) {
+                connectTo(url);
+            }
+
+            @Override
+            public void onProblem(String message) {
+                setStatus(message);
+            }
+        });
+    }
+
+    // ------------------------------------------------------------ 一键启动
+
+    private void onStartClicked() {
+        if (!bootstrapReady) {
+            setStatus("运行环境还在初始化，请稍候…");
+            return;
         }
+        startButton.setEnabled(false);
+        startButton.setText("启动中…");
+        setStatus("正在检查运行环境…");
+
+        launcher.reuseOrStart(prefs.mirrorUrl(), new DshLauncher.Listener() {
+            @Override
+            public void onStatus(String code) {
+                setStatus(statusText(code));
+                if (code.startsWith("error:") || code.equals("stopped")) {
+                    resetStartButton();
+                }
+            }
+
+            @Override
+            public void onReady(String url) {
+                resetStartButton();
+                connectTo(url);
+            }
+
+            @Override
+            public void onProblem(String message) {
+                resetStartButton();
+                setStatus(message);
+            }
+        });
+    }
+
+    private void resetStartButton() {
+        startButton.setEnabled(true);
+        startButton.setText("一键启动");
+    }
+
+    private String statusText(String code) {
+        if (code == null || code.isEmpty()) {
+            return "";
+        }
+        switch (code) {
+            case "check":
+                return "正在检查运行环境…";
+            case "mirror":
+                return "正在设置软件源镜像…";
+            case "apt-update":
+                return "正在更新软件源（首次较慢）…";
+            case "install-node":
+                return "正在安装 Node.js 与 npm…";
+            case "install-dsh":
+                return "正在安装 DSH…";
+            case "start":
+                return "正在启动 DSH 主机…";
+            case "stopped":
+                return "DSH 主机已停止。可再次点「一键启动」。";
+            default:
+                if (code.startsWith("error:")) {
+                    return "启动失败（" + code.substring(6) + "）。\n"
+                            + "可点「打开终端」查看日志，或切换软件源镜像后重试。";
+                }
+                return code;
+        }
+    }
+
+    /** 从带 token 的 URL 里解析出地址与令牌，保存后加载界面。 */
+    private void connectTo(String url) {
+        Uri uri = Uri.parse(url);
+        String token = uri.getQueryParameter("token");
+        String base = buildBase(uri);
+        if (base == null || TextUtils.isEmpty(token)) {
+            setStatus("启动器拿到的地址不完整：" + url);
+            return;
+        }
+        prefs.setBaseUrl(base);
+        prefs.setToken(token);
+        baseUrlInput.setText(base);
+        tokenInput.setText(token);
+        setStatus("已连接：" + base);
+        showWeb();
+        loadEntry();
     }
 
     // ---------------------------------------------------------------- WebView
@@ -196,8 +313,10 @@ public class DshActivity extends AppCompatActivity {
                                         WebResourceResponse errorResponse) {
             if (request.isForMainFrame() && errorResponse.getStatusCode() == 401) {
                 authFailed = true;
-                runOnUiThread(() -> showSetup(
-                        "授权已失效。请在终端中重新运行 dsh web，并粘贴新打印的 URL。"));
+                runOnUiThread(() -> {
+                    showSetup("授权已失效，点「一键启动」重新拉起后端即可。");
+                    resetStartButton();
+                });
             }
         }
 
@@ -205,8 +324,10 @@ public class DshActivity extends AppCompatActivity {
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             if (request.isForMainFrame()) {
                 String desc = error == null ? "" : String.valueOf(error.getDescription());
-                runOnUiThread(() -> showSetup(
-                        "无法连接后端：" + desc + "\n请先在终端中启动 dsh web。"));
+                runOnUiThread(() -> {
+                    showSetup("无法连接后端：" + desc + "\n点「一键启动」重新拉起。");
+                    resetStartButton();
+                });
             }
         }
     }
@@ -377,12 +498,20 @@ public class DshActivity extends AppCompatActivity {
 
     // ------------------------------------------------------------------- 配置
 
-    private void wireSetupUi() {
+    private void wireUi() {
+        startButton.setOnClickListener(v -> onStartClicked());
+        findViewById(R.id.dsh_btn_terminal).setOnClickListener(v -> openTerminal());
+        manualButton.setOnClickListener(v -> toggleManual());
         findViewById(R.id.dsh_btn_paste).setOnClickListener(v -> pasteFromClipboard());
-        findViewById(R.id.dsh_btn_connect).setOnClickListener(v -> connect());
-        findViewById(R.id.dsh_btn_termux).setOnClickListener(v -> startBackend());
+        findViewById(R.id.dsh_btn_connect).setOnClickListener(v -> connectManual());
         findViewById(R.id.dsh_btn_help).setOnClickListener(v -> showHelp());
         findViewById(R.id.dsh_btn_menu).setOnClickListener(this::showMenu);
+    }
+
+    private void toggleManual() {
+        boolean show = manualPanel.getVisibility() != View.VISIBLE;
+        manualPanel.setVisibility(show ? View.VISIBLE : View.GONE);
+        manualButton.setText(show ? "收起配置" : "手动配置");
     }
 
     private void pasteFromClipboard() {
@@ -434,7 +563,7 @@ public class DshActivity extends AppCompatActivity {
         return sb.toString();
     }
 
-    private void connect() {
+    private void connectManual() {
         String base = baseUrlInput.getText().toString().trim();
         String token = tokenInput.getText().toString().trim();
 
@@ -464,22 +593,6 @@ public class DshActivity extends AppCompatActivity {
         loadEntry();
     }
 
-    private void startBackend() {
-        boolean ok = DshBackend.start(this, "dsh web");
-        if (ok) {
-            new AlertDialog.Builder(this)
-                    .setTitle("已在终端会话中启动")
-                    .setMessage("dsh web 正在终端里运行，并会打印一个带 token 的访问 URL。\n\n"
-                            + "打开终端复制该 URL，回到本页点「粘贴」即可。")
-                    .setPositiveButton("打开终端", (d, w) -> openTerminal())
-                    .setNegativeButton("稍后", null)
-                    .show();
-        } else {
-            toast("启动失败，请到终端手动执行 dsh web");
-            openTerminal();
-        }
-    }
-
     private void openTerminal() {
         try {
             startActivity(new Intent(this, TermuxActivity.class));
@@ -503,9 +616,8 @@ public class DshActivity extends AppCompatActivity {
                         new AlertDialog.Builder(this)
                                 .setTitle("已切换镜像")
                                 .setMessage("已写入：\n" + line
-                                        + "\n\n请在终端执行 apt update 使其生效。")
-                                .setPositiveButton("去终端", (d, w) -> openTerminal())
-                                .setNegativeButton("关闭", null)
+                                        + "\n\n下次「一键启动」会自动使用该镜像。")
+                                .setPositiveButton("知道了", null)
                                 .show();
                     } catch (Exception e) {
                         toast("写入失败：" + e.getMessage());
@@ -517,17 +629,14 @@ public class DshActivity extends AppCompatActivity {
 
     private void showHelp() {
         new AlertDialog.Builder(this)
-                .setTitle("首次使用")
-                .setMessage("1. 打开终端，安装 Node 与 DSH：\n"
-                        + "pkg update\n"
-                        + "pkg install nodejs-lts\n"
-                        + "npm i -g @deepseek-ai/dsh\n\n"
-                        + "2. 启动主机：\n"
-                        + "dsh web\n\n"
-                        + "3. 复制它打印的 http://127.0.0.1:3090/?token=... 地址，\n"
-                        + "回到本页点「粘贴」→「连接」。\n\n"
-                        + "提示：令牌随 dsh web 进程变化，重启后需要重新粘贴。\n"
-                        + "国内网络建议先在菜单里切换软件源镜像。")
+                .setTitle("使用说明")
+                .setMessage("1. 点「一键启动」\n"
+                        + "   自动完成：装 Node.js → 装 DSH → 启动 dsh web → 连接界面。\n"
+                        + "   首次需要联网下载，耗时几分钟。\n\n"
+                        + "2. 国内网络建议先在菜单里切换「软件源镜像」。\n\n"
+                        + "3. 需要手动操作时点「打开终端」，可执行 pkg / npm 等命令。\n\n"
+                        + "4. 连接远程 DSH 主机时用「手动配置」填地址与令牌。\n\n"
+                        + "日志：$PREFIX/tmp/dsh-boot.log、dsh-web.log")
                 .setPositiveButton("关闭", null)
                 .show();
     }
@@ -538,8 +647,8 @@ public class DshActivity extends AppCompatActivity {
         menu.getMenu().add(0, 2, 1, prefs.desktopMode() ? "✓ 桌面模式" : "桌面模式");
         menu.getMenu().add(0, 3, 2, "打开终端");
         menu.getMenu().add(0, 4, 3, "软件源镜像");
-        menu.getMenu().add(0, 5, 4, "连接设置");
-        menu.getMenu().add(0, 6, 5, "使用帮助");
+        menu.getMenu().add(0, 5, 4, "重启后端");
+        menu.getMenu().add(0, 6, 5, "使用说明");
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
                 case 1:
@@ -557,7 +666,8 @@ public class DshActivity extends AppCompatActivity {
                     showMirrorDialog();
                     return true;
                 case 5:
-                    showSetup(null);
+                    showSetup("点「一键启动」重新拉起后端。");
+                    resetStartButton();
                     return true;
                 case 6:
                     showHelp();
@@ -644,6 +754,7 @@ public class DshActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        launcher.stop();
         if (webView != null) {
             webView.destroy();
         }
