@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#FFFFFF</color>
+
+    <!--
+      桌面图标配色（8 套）。
+      这些值原先只存在于作者本地的 values/colors.xml，未随仓库发布，
+      导致 IconSwitcher 引用的 R.color.icon_bg_* 在全新 clone 上找不到符号。
+      bg 用于 mipmap/ic_launcher_<id>.xml 与 adaptive-icon 的 background；
+      accent 用于常驻通知的强调色。
+    -->
+    <color name="icon_bg_white">#FFFFFF</color>
+    <color name="icon_bg_sky">#4A90D9</color>
+    <color name="icon_bg_mint">#3EC9A7</color>
+    <color name="icon_bg_lilac">#B39DDB</color>
+    <color name="icon_bg_peach">#FFAB91</color>
+    <color name="icon_bg_forest">#2E7D5B</color>
+    <color name="icon_bg_navy">#1A237E</color>
+    <color name="icon_bg_ink">#1C1C1E</color>
+
+    <color name="icon_accent_white">#2F6BFF</color>
+    <color name="icon_accent_sky">#1E6FD9</color>
+    <color name="icon_accent_mint">#10A37F</color>
+    <color name="icon_accent_lilac">#7E57C2</color>
+    <color name="icon_accent_peach">#F4511E</color>
+    <color name="icon_accent_forest">#1B5E20</color>
+    <color name="icon_accent_navy">#3949AB</color>
+    <color name="icon_accent_ink">#FFFFFF</color>
+
+    <!-- DSH Next 桌面版图标的底色（纯黑；白图案由 ic_launcher_foreground_next 提供） -->
+    <color name="icon_bg_next">#000000</color>
+</resources>

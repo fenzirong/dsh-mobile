@@ -1,0 +1,135 @@
+# Tdsh Android（tdsh-android/）发版：打 `tdsh-v*` tag 时签名构建并发布。
+#
+# 与仓库根目录的 release.yml（合并 Termux 版，tag `v*`）**互不干扰**：
+#   · tag 前缀不同（tdsh-v* vs v*）；
+#   · 产物名带 Tdsh- 前缀，release 也各自独立。
+name: tdsh-android-release
+
+on:
+  push:
+    tags: ['tdsh-v*']
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'versionName（留空则用 tag 去掉 tdsh-v）'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: tdsh-android
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          CMDLINE="$(find "$SDK/cmdline-tools" -maxdepth 4 -name sdkmanager -print -quit || true)"
+          if [ -z "$CMDLINE" ]; then echo "::error::sdkmanager not found"; exit 1; fi
+          yes | "$CMDLINE" --sdk_root="$SDK" --licenses >/dev/null 2>&1 || true
+          "$CMDLINE" --sdk_root="$SDK" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Restore signing keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.DSH_KEYSTORE_B64 }}
+          STORE_PASSWORD: ${{ secrets.DSH_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_B64:-}" ]; then echo "::error::缺少 secret DSH_KEYSTORE_B64"; exit 1; fi
+          printf '%s' "$KEYSTORE_B64" | base64 -d > release.keystore
+          {
+            echo "storeFile=release.keystore"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=dsh"
+            echo "keyPassword=$STORE_PASSWORD"
+          } > keystore.properties
+
+      - name: Build release APK
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace assembleRelease
+
+      - name: Verify signature and write checksums
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          BT="$SDK/build-tools/36.0.0"
+          APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)"
+          if [ -z "$APK" ]; then echo "::error::没有产出 APK"; exit 1; fi
+          VERSION="$(grep -oP 'versionName\s+"\K[^"]+' app/build.gradle | head -n1 || true)"
+          if [ -n "${{ github.event.inputs.version_name }}" ]; then
+            VERSION="${{ github.event.inputs.version_name }}"
+          elif [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            VERSION="${GITHUB_REF_NAME#tdsh-v}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          "$BT/apksigner" verify --verbose --print-certs "$APK"
+          "$BT/aapt2" dump badging "$APK" | grep -E "^(package|sdkVersion|targetSdkVersion)" || true
+          mkdir -p release
+          cp "$APK" "release/Tdsh-${VERSION}.apk"
+          cd release && sha256sum "Tdsh-${VERSION}.apk" > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          python3 - "${VERSION#v}" <<'PYEOF' > release/RELEASE_NOTES.md
+          import os, re, sys
+          ver = sys.argv[1]
+          text = open('CHANGELOG.md', encoding='utf-8').read()
+          m = re.search(r'^## +v?' + re.escape(ver) + r'\s*$', text, re.M)
+          if not m:
+              print("（本版没有在 CHANGELOG.md 里找到 v%s 小节。）" % ver)
+              sys.exit(0)
+          rest = text[m.end():]
+          nxt = re.search(r'^## ', rest, re.M)
+          print((rest[:nxt.start()] if nxt else rest).strip())
+          PYEOF
+          {
+            echo "## 安装"
+            echo
+            echo "- 下载 \`Tdsh-${VERSION#v}.apk\`，传到手机上点击安装（仅 arm64，Android 7.0+）。"
+            echo "- 包名 \`com.dsh.tdsh\`：与旧包名（com.dshmobile.probe）是**两个应用**，可并存。"
+            echo "- 校验：比对 \`SHA256SUMS.txt\`。"
+            echo
+            echo "---"
+            echo
+            cat release/RELEASE_NOTES.md
+          } > release/RELEASE_NOTES.tmp && mv release/RELEASE_NOTES.tmp release/RELEASE_NOTES.md
+          head -12 release/RELEASE_NOTES.md
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tdsh-android-apk
+          path: |
+            tdsh-android/release/*.apk
+            tdsh-android/release/SHA256SUMS.txt
+            tdsh-android/release/RELEASE_NOTES.md
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            tdsh-android/release/*.apk
+            tdsh-android/release/SHA256SUMS.txt
+          body_path: tdsh-android/release/RELEASE_NOTES.md
+          fail_on_unmatched_files: true

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 的路径表（OpenWith 用它把文件交给别的应用打开）。
+
+  为什么要覆盖这么大的范围：DSH 的「打开方式」两类路径都会出现 ——
+    · 手机共享存储：/sdcard/dsh/xxx.jpg
+    · 容器内路径：/root/work/xxx.png（实际落在 App 私有 rootfs 下）
+  只登记 Download/ 这类窄路径会让 getUriForFile 直接抛 IllegalArgumentException。
+
+  访问者仍然受限：provider 是 exported=false，且只通过
+  FLAG_GRANT_READ_URI_PERMISSION 临时授权给用户在系统选择器里点中的那一个应用。
+
+  这份文件原先未随仓库发布，导致 AndroidManifest 里的 @xml/file_paths 引用悬空。
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <root-path name="root" path="." />
+    <external-path name="external" path="." />
+    <external-files-path name="ext_files" path="." />
+    <files-path name="files" path="." />
+    <cache-path name="cache" path="." />
+</paths>

@@ -1,0 +1,24 @@
+# 构建产物
+build/
+.gradle/
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# 本机路径（每台机器不同，绝不能入库）
+local.properties
+
+# 签名材料 —— 一旦泄露，别人就能冒名发布能覆盖安装到你设备上的升级包
+keystore.properties
+*.keystore
+*.jks
+*.p12
+
+# 发布产物（CI 现做现发，不入库；本地构建输出也别提交）
+release/
+
+# 系统垃圾
+Thumbs.db
+.DS_Store

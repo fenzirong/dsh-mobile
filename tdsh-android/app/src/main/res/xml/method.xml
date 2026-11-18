@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  DSH 内置输入法的声明。
+
+  它只有一个 keyboard subtype，不提供候选词与键盘布局 —— 因为它不是给人敲的，
+  而是被 ImeInjector 程序化驱动：切过来、提交一段文字、再切回去。
+  微信这类应用会拦无障碍的 ACTION_SET_TEXT 与 shell 的 input text，
+  但拦不住"输入法提交"，这是唯一还能把字打进去的通道。
+
+  这份文件原先未随仓库发布，导致 AndroidManifest 里的 @xml/method 引用悬空。
+-->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android">
+    <subtype
+        android:label="DSH 输入"
+        android:imeSubtypeMode="keyboard"
+        android:imeSubtypeLocale="zh_CN"
+        android:imeSubtypeExtraValue="AsciiCapable" />
+</input-method>

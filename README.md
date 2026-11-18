@@ -8,9 +8,31 @@
 | --- | --- | --- | --- |
 | `DSH-Mobile-shell.apk` | `com.dsh.mobile` | 2.8 MB | 纯前端外壳，连接 Termux 里的 DSH 主机 |
 | `DSH-Mobile-merged-arm64.apk` | `com.dshapp` | 36.8 MB | 内置 Termux 的合并版，一个 APK 同时含终端与前端（仅 arm64-v8a） |
+| `Tdsh-<版本>.apk`（`tdsh-android/`） | `com.dsh.tdsh` | 约 4.7 MB | **PRoot + Ubuntu + Node + DSH** 的自包含版：不依赖 Termux，内置手机控制（无障碍/Shizuku）、插件市场、容器接管等；源码在 [`tdsh-android/`](tdsh-android/)，发版 tag 用 `tdsh-v*` |
 
 两者共用同一套前端逻辑：**DSH 的 Web GUI 原样跑在 WebView 里**，所以所有已安装的
 客户端插件（侧边栏、终端、文件、插件市场、日程、子代理……）都自动生效，不需要为安卓重写。
+
+---
+
+## 零、`tdsh-android/`：自包含的 PRoot 版
+
+本仓库除了上面两个「外壳 / 合并 Termux」产物，还收了一个**自包含**的安卓版
+（原 `Tdsh-DSH-Mobile-Android-NO-ROOT`，已迁入本仓库）：
+
+| 项 | 说明 |
+| --- | --- |
+| 包名 | `com.dsh.tdsh`（与上面两个产物**互不冲突**，可同时安装） |
+| 运行方式 | 内置 PRoot + Ubuntu 24.04 + Node + `dsh web`；不需要 Termux、不需要 root |
+| 手机控制 | 无障碍 / Shizuku / 命令后端 + 应用白名单；`phone` CLI 走本机回环控制桥 |
+| 插件 | 官方 Web UI 原样跑在 WebView 里 → **客户端插件 100% 兼容**；插件市场可装第三方插件 |
+| 构建 | `.github/workflows/tdsh-android-build.yml`（push 即出 debug APK） |
+| 发版 | `.github/workflows/tdsh-android-release.yml`（打 `tdsh-v*` tag，签名 + 发布） |
+| 文档 | [`tdsh-android/README.md`](tdsh-android/README.md)、[`tdsh-android/CHANGELOG.md`](tdsh-android/CHANGELOG.md) |
+
+> 它和「合并 Termux」版是两条不同的技术路线：合并版用 **bionic 原生 node**（启动快，
+> 但需要前缀改写）；`tdsh-android` 用 **PRoot 容器**（兼容性最好，启动慢一些），
+> 并额外接了 tawcroot 与 Termux 原生两条可选运行时（默认关，先自检再启用）。
 
 ---
 
