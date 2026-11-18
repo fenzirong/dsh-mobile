@@ -151,6 +151,23 @@ http://127.0.0.1:3090/?token=<launchToken>
 失败时状态栏会显示具体阶段（如 `error:install-node`），可点「打开终端」查看
 `$PREFIX/tmp/dsh-boot.log`，或切换软件源镜像后重试。
 
+### 从 tdsh-android 并入的能力
+
+`tdsh-android/` 是另一条技术路线（PRoot 容器）。合并版按「能独立于容器运行」的标准，
+先把最能复用的两层搬了过来：
+
+| 能力 | 状态 | 说明 |
+| --- | --- | --- |
+| **自带 DSH 插件** | 已并入 | `dsh-link`（双端互通）、`dsh-thinking`（思考链诊断）。零依赖，装机时离线解包到 `~/.dsh/profiles/web/node_modules/`，并把包名写进 profile 的 `dsh.profile.bundles` |
+| **窄屏 UI 补丁** | 已并入 | `dsh-mobile.js` 在页面加载后注入，把设置弹窗从「左分类+右内容」改成列表→详情，解决中文被 124px 右栏挤成一字一行 |
+| 手机控制桥 | 待移植 | `PhoneBridge` + 无障碍/Shizuku 后端（`127.0.0.1:3099`），依赖 `Env` 的 8 处容器路径，需改写为 Termux 原生路径 |
+| PRoot 运行时 | 待移植 | 另一套运行时（Ubuntu rootfs + proot）。合并版用 bionic 原生 node，启动更快，暂不引入 |
+
+插件安装刻意不走 `dsh plugin add`（它内部转发 pnpm，运行时里没有 pnpm，还要联网）：
+插件零依赖，直接解包 + 改 `package.json` 即可，完全离线、确定性。
+
+首次运行时脚本会先短暂启动一次 `dsh web` 让 profile 落地，随即杀掉，装完插件再正式启动。
+
 ### 构建
 
 推荐用 GitHub Actions（内存充足，NDK 编译稳定）：

@@ -213,6 +213,34 @@ public final class DshLauncher {
                 // 交给后面的执行阶段报错
             }
         }
+        return preparePlugins();
+    }
+
+    /** 把 assets/plugins 下随 APK 自带的 DSH 插件拷到 $PREFIX/tmp/dsh-plugins/。 */
+    private String preparePlugins() {
+        File dir = new File(TMP, "dsh-plugins");
+        if (!dir.exists() && !dir.mkdirs()) {
+            return "无法创建插件目录 " + dir;
+        }
+        try {
+            String[] names = context.getAssets().list("plugins");
+            if (names == null || names.length == 0) {
+                return null;
+            }
+            byte[] buf = new byte[8192];
+            for (String name : names) {
+                File out = new File(dir, name);
+                try (InputStream in = context.getAssets().open("plugins/" + name);
+                     FileOutputStream os = new FileOutputStream(out)) {
+                    int n;
+                    while ((n = in.read(buf)) > 0) {
+                        os.write(buf, 0, n);
+                    }
+                }
+            }
+        } catch (IOException e) {
+            return "释放自带插件失败：" + e.getMessage();
+        }
         return null;
     }
 

@@ -48,6 +48,9 @@ import com.dsh.mobile.MirrorBenchmark;
 import com.termux.R;
 import com.termux.shared.termux.file.TermuxFileUtils;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -84,6 +87,8 @@ public class DshActivity extends AppCompatActivity {
     private PermissionRequest pendingPermissionRequest;
     private boolean authFailed;
     private boolean bootstrapReady;
+    /** 懒加载的窄屏 UI 补丁脚本（来自 tdsh-android 的 dsh-mobile.js）。 */
+    private String mobilePatch;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -261,6 +266,10 @@ public class DshActivity extends AppCompatActivity {
                 return "正在安装 Node.js 与 npm…";
             case "install-dsh":
                 return "正在安装 DSH…";
+            case "init-profile":
+                return "正在初始化 DSH 配置目录…";
+            case "install-plugins":
+                return "正在安装自带插件…";
             case "start":
                 return "正在启动 DSH 主机…";
             case "stopped":
@@ -324,6 +333,32 @@ public class DshActivity extends AppCompatActivity {
         webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
     }
 
+    /**
+     * 注入窄屏 UI 补丁：把 DSH 的设置弹窗从「左分类 + 右内容」改成列表→详情两态，
+     * 避免中文被 124px 的右栏挤成一字一行。
+     *
+     * <p>脚本来自 tdsh-android，对原生桥的调用都带 {@code if (window.DshAndroid)} 守卫，
+     * 在没有该桥的合并版里会自动降级，只保留纯 CSS/JS 的布局改造。
+     */
+    private void injectMobilePatch() {
+        if (mobilePatch == null) {
+            try (InputStream in = getAssets().open("dsh-mobile.js")) {
+                ByteArrayOutputStream bos = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    bos.write(buf, 0, n);
+                }
+                mobilePatch = bos.toString("UTF-8");
+            } catch (IOException e) {
+                mobilePatch = "";
+            }
+        }
+        if (!mobilePatch.isEmpty()) {
+            webView.evaluateJavascript(mobilePatch, null);
+        }
+    }
+
     private void applyLayoutMode() {
         WebSettings s = webView.getSettings();
         boolean desktop = prefs.desktopMode();
@@ -359,6 +394,7 @@ public class DshActivity extends AppCompatActivity {
             }
             if (url != null && !url.contains("token=")) {
                 showWeb();
+                injectMobilePatch();
             }
         }
 
