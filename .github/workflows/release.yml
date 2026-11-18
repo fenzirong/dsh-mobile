@@ -47,6 +47,15 @@ jobs:
           printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
           ./gradlew --no-daemon --stacktrace assembleDebug
 
+      - name: Generate patched bootstrap
+        working-directory: termux
+        run: |
+          set -e
+          # bootstrap 不再入库（29 MB 的二进制，每次改动都会让仓库膨胀），
+          # 构建前从上游下载并改写前缀 + 注入 apt 钩子。
+          python3 tools/build-bootstrap.py --ndk "$ANDROID_HOME/ndk/29.0.14206865"
+          ls -lh app/src/main/cpp/bootstrap-aarch64.zip
+
       - name: Build merged APK (com.dshapp, built-in Termux)
         working-directory: termux
         run: |

@@ -161,41 +161,14 @@ def validateVersionName(String versionName) {
 }
 
 def downloadBootstrap(String arch, String expectedChecksum, String version) {
-    def digest = java.security.MessageDigest.getInstance("SHA-256")
-
+    // 内置 bootstrap 由 tools/build-bootstrap.py 生成（已把 com.termux 前缀改写为 com.dshapp），
+    // 不再提交进仓库。缺失时直接失败，避免悄悄下载官方未改写前缀的包、产出装不起来的 APK。
     def localUrl = "src/main/cpp/bootstrap-" + arch + ".zip"
     def file = new File(projectDir, localUrl)
-    if (file.exists()) {
-        def buffer = new byte[8192]
-        def input = new FileInputStream(file)
-        while (true) {
-            def readBytes = input.read(buffer)
-            if (readBytes < 0) break
-            digest.update(buffer, 0, readBytes)
-        }
-        def checksum = new BigInteger(1, digest.digest()).toString(16)
-        while (checksum.length() < 64) { checksum = "0" + checksum }
-        // 本地已放置改写前缀后的 bootstrap，直接使用，跳过官方校验和。
-        return
-    }
-
-    def remoteUrl = "https://github.com/termux/termux-packages/releases/download/bootstrap-" + version + "/bootstrap-" + arch + ".zip"
-    logger.quiet("Downloading " + remoteUrl + " ...")
-
-    file.parentFile.mkdirs()
-    def out = new BufferedOutputStream(new FileOutputStream(file))
-
-    def connection = new URL(remoteUrl).openConnection()
-    connection.setInstanceFollowRedirects(true)
-    def digestStream = new java.security.DigestInputStream(connection.inputStream, digest)
-    out << digestStream
-    out.close()
-
-    def checksum = new BigInteger(1, digest.digest()).toString(16)
-    while (checksum.length() < 64) { checksum = "0" + checksum }
-    if (checksum != expectedChecksum) {
-        file.delete()
-        throw new GradleException("Wrong checksum for " + remoteUrl + ": expected: " + expectedChecksum + ", actual: " + checksum)
+    if (!file.exists()) {
+        throw new GradleException(
+            "缺少 " + localUrl + "。请先运行：\n" +
+            "  python3 tools/build-bootstrap.py --ndk \$ANDROID_HOME/ndk/29.0.14206865")
     }
 }
 

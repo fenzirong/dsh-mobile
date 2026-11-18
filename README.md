@@ -1,6 +1,6 @@
 # DSH Mobile
 
-把 DeepSeek Harness（DSH）搬到安卓上的两个产物，均由 GitHub Actions 构建并发布：
+把 DeepSeek Harness（DSH）搬到安卓上的三个产物，均由 GitHub Actions 构建并发布：
 
 **下载地址：https://github.com/fenzirong/dsh-mobile/releases/latest**
 
@@ -10,7 +10,7 @@
 | `DSH-Mobile-merged-arm64.apk` | `com.dshapp` | 36.8 MB | 内置 Termux 的合并版，一个 APK 同时含终端与前端（仅 arm64-v8a） |
 | `Tdsh-<版本>.apk`（`tdsh-android/`） | `com.dsh.tdsh` | 约 4.7 MB | **PRoot + Ubuntu + Node + DSH** 的自包含版：不依赖 Termux，内置手机控制（无障碍/Shizuku）、插件市场、容器接管等；源码在 [`tdsh-android/`](tdsh-android/)，发版 tag 用 `tdsh-v*` |
 
-两者共用同一套前端逻辑：**DSH 的 Web GUI 原样跑在 WebView 里**，所以所有已安装的
+三者共用同一套前端逻辑：**DSH 的 Web GUI 原样跑在 WebView 里**，所以所有已安装的
 客户端插件（侧边栏、终端、文件、插件市场、日程、子代理……）都自动生效，不需要为安卓重写。
 
 ---
@@ -163,12 +163,16 @@ git tag v1.0.4 && git push origin v1.0.4   # 触发构建并自动发布 Release
 安装 `ndk;29.0.14206865` / `platforms;android-36` / `build-tools;35.0.0` 后分别构建两个 APK，
 打 tag 时用 `softprops/action-gh-release` 发布。
 
+**内置 bootstrap 不入库**（29 MB 的二进制，每次改动都会让仓库膨胀），
+构建前由 `tools/build-bootstrap.py` 现生成：下载上游 → 等长改写前缀 → 注入 apt 钩子。
+CI 里这一步在「Build merged APK」之前自动执行。
+
 本地构建（需 ≥ 4 GB 可用内存 + 充足磁盘 I/O）：
 
 ```bash
 cd termux
 # 需要：JDK 17、SDK platform 36、build-tools 35.0.0、NDK 29.0.14206865
-./gradlew assembleDebug
+./build.sh          # 缺 bootstrap 时会自动生成，然后 assembleDebug
 ```
 
 产物：`termux/app/build/outputs/apk/debug/`（仅 arm64-v8a）。
@@ -228,19 +232,25 @@ apt 下载 .deb → DPkg::Pre-Invoke 触发 dsh-fixdeb
 
 ```
 dsh-mobile/
-├── android/                 # 外壳版工程（com.dsh.mobile）
+├── .github/workflows/       # CI：release.yml（v* 发版）、tdsh-android-*.yml
+├── android/                 # 外壳版（com.dsh.mobile）
 │   ├── app/src/main/java/com/dsh/mobile/
 │   │   ├── MainActivity.java    # WebView 外壳、鉴权、401 重授权、下载/上传
 │   │   ├── Prefs.java           # 连接配置持久化
 │   │   └── TermuxBridge.java    # RUN_COMMAND 拉起后端
-│   └── keystore/debug.keystore  # 工作区内调试签名
-├── termux/                  # 合并版工程（com.dshapp）
+│   └── keystore/debug.keystore  # 调试签名（公开测试密钥）
+├── termux/                  # 合并版（com.dshapp，内置 Termux）
 │   ├── app/src/main/java/com/termux/app/DshActivity.java
-│   ├── app/src/main/java/com/dsh/mobile/{DshPrefs,DshMirrors,DshBackend}.java
-│   ├── app/src/main/cpp/bootstrap-aarch64.zip   # 已改写前缀
-│   └── ...
-└── dist/                    # 构建产物
+│   ├── app/src/main/java/com/dsh/mobile/        # DshPrefs/DshMirrors/DshBackend/
+│   │                                            # DshLauncher/DshProgress/MirrorBenchmark
+│   ├── app/src/main/assets/dsh-boot.sh          # 一键启动脚本
+│   ├── app/src/main/cpp/bootstrap-aarch64.zip   # 构建时生成，不入库
+│   └── tools/                                   # dshfix.c / dsh-fixdeb / build-bootstrap.py
+├── tdsh-android/            # PRoot 自包含版（com.dsh.tdsh）
+└── dist/                    # 本地构建产物（已 gitignore，不入库）
 ```
+
+> 工作流只认根目录 `.github/workflows/`；`tdsh-android/` 里不再保留嵌套的 workflow 副本。
 
 ---
 
@@ -250,3 +260,12 @@ dsh-mobile/
 - 令牌与 `dsh web` 进程同生命周期，重启后端需重新粘贴 URL；
 - 桌面模式在窄屏上文字偏小，建议配合双指缩放；
 - 合并版对 Termux 上游的改动集中在包名与 bootstrap 前缀，升级上游时需重做这两步。
+
+---
+
+## 七、许可证
+
+本仓库自有代码以 **GPL-3.0** 发布，见 [`LICENSE`](LICENSE)。
+
+各子项目许可不同（`termux/` 为 GPLv3、`tdsh-android/` 自有代码为 MIT 但打包了 GPLv2 的 proot），
+分发 APK 时的义务见 [`NOTICE.md`](NOTICE.md)。

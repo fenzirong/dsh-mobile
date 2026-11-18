@@ -25,10 +25,10 @@ if [ ! -f local.properties ]; then
   printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
 fi
 
+# bootstrap 不入库，构建前按需生成（下载上游 + 改写前缀 + 注入 apt 钩子）
 if [ ! -f app/src/main/cpp/bootstrap-aarch64.zip ]; then
-  echo "缺少 app/src/main/cpp/bootstrap-aarch64.zip（已改写 com.dshapp 前缀的 bootstrap）" >&2
-  echo "可从 termux-packages releases 下载后按 README 的说明改写前缀。" >&2
-  exit 1
+  echo "生成内置 bootstrap ..."
+  python3 tools/build-bootstrap.py --ndk "$ANDROID_HOME/ndk/29.0.14206865"
 fi
 
 TASK="assembleDebug"
