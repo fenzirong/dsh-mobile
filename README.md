@@ -151,6 +151,16 @@ http://127.0.0.1:3090/?token=<launchToken>
 失败时状态栏会显示具体阶段（如 `error:install-node`），可点「打开终端」查看
 `$PREFIX/tmp/dsh-boot.log`，或切换软件源镜像后重试。
 
+**防卡死**：`apt-get` / `npm` 默认没有超时，遇到半死连接会无限等待，表现就是界面一直
+停在「正在安装 Node.js 与 npm」。现在统一加了：
+
+- `Acquire::http::Timeout=30` / `https::Timeout=30` / `Retries=3` —— 卡住的连接会超时重试；
+- `Dpkg::Options::=--force-confdef --force-confold` —— 配置文件冲突不问人；
+- 所有命令 `< /dev/null` —— 杜绝任何交互式提问把进程挂住。
+
+界面上还会实时显示启动日志的最后 6 行，菜单里「查看日志」可直接看完整的
+`dsh-boot.log` 与 `dsh-fixdeb.log`。
+
 ### 从 tdsh-android 并入的能力
 
 `tdsh-android/` 是另一条技术路线（PRoot 容器）。合并版按「能独立于容器运行」的标准，

@@ -120,6 +120,20 @@
                 android:textColor="@color/dsh_muted"
                 android:textSize="13sp" />
 
+            <TextView
+                android:id="@+id/dsh_log"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/dsh_bg_input"
+                android:fontFamily="monospace"
+                android:lineSpacingExtra="2dp"
+                android:maxLines="6"
+                android:padding="10dp"
+                android:textColor="@color/dsh_muted"
+                android:textSize="11sp"
+                android:visibility="gone" />
+
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

@@ -82,6 +82,7 @@ public class DshActivity extends AppCompatActivity {
     private EditText baseUrlInput;
     private EditText tokenInput;
     private TextView statusView;
+    private TextView logView;
 
     private ValueCallback<Uri[]> fileCallback;
     private PermissionRequest pendingPermissionRequest;
@@ -111,6 +112,7 @@ public class DshActivity extends AppCompatActivity {
         baseUrlInput = findViewById(R.id.dsh_input_base_url);
         tokenInput = findViewById(R.id.dsh_input_token);
         statusView = findViewById(R.id.dsh_status);
+        logView = findViewById(R.id.dsh_log);
 
         baseUrlInput.setText(prefs.baseUrl());
         tokenInput.setText(prefs.token());
@@ -162,6 +164,11 @@ public class DshActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onDetail(String logTail) {
+                showDetail(logTail);
+            }
+
+            @Override
             public void onProblem(String message) {
                 setStatus(message);
             }
@@ -192,6 +199,11 @@ public class DshActivity extends AppCompatActivity {
                 progressModel.finish();
                 resetStartButton();
                 connectTo(url);
+            }
+
+            @Override
+            public void onDetail(String logTail) {
+                showDetail(logTail);
             }
 
             @Override
@@ -237,6 +249,11 @@ public class DshActivity extends AppCompatActivity {
             progressModel.finish();
             resetStartButton();
             connectTo(url);
+        }
+
+        @Override
+        public void onDetail(String logTail) {
+            showDetail(logTail);
         }
 
         @Override
@@ -740,6 +757,7 @@ public class DshActivity extends AppCompatActivity {
         menu.getMenu().add(0, 4, 3, "软件源镜像");
         menu.getMenu().add(0, 5, 4, "重启后端");
         menu.getMenu().add(0, 6, 5, "使用说明");
+        menu.getMenu().add(0, 7, 6, "查看日志");
         menu.setOnMenuItemClickListener(item -> {
             switch (item.getItemId()) {
                 case 1:
@@ -762,6 +780,9 @@ public class DshActivity extends AppCompatActivity {
                     return true;
                 case 6:
                     showHelp();
+                    return true;
+                case 7:
+                    showLogDialog();
                     return true;
                 default:
                     return false;
@@ -788,6 +809,66 @@ public class DshActivity extends AppCompatActivity {
 
     private void setStatus(String message) {
         statusView.setText(message);
+    }
+
+    /** 显示启动日志的最后几行，让"看起来卡住"其实能看出在下什么。 */
+    private void showDetail(String tail) {
+        if (tail == null || tail.isEmpty()) {
+            logView.setVisibility(View.GONE);
+            return;
+        }
+        logView.setText(tail);
+        logView.setVisibility(View.VISIBLE);
+    }
+
+    /** 弹窗展示完整启动日志（末尾若干行）。 */
+    private void showLogDialog() {
+        new Thread(() -> {
+            final String text = readTail(new java.io.File(DshLauncher.PREFIX + "/tmp/dsh-boot.log"), 200);
+            final String fix = readTail(new java.io.File(DshLauncher.PREFIX + "/tmp/dsh-fixdeb.log"), 40);
+            runOnUiThread(() -> {
+                StringBuilder sb = new StringBuilder();
+                if (text != null) {
+                    sb.append("== dsh-boot.log ==\n").append(text).append("\n\n");
+                }
+                if (fix != null) {
+                    sb.append("== dsh-fixdeb.log ==\n").append(fix);
+                }
+                if (sb.length() == 0) {
+                    sb.append("暂无日志。");
+                }
+                new AlertDialog.Builder(this)
+                        .setTitle("启动日志")
+                        .setMessage(sb.toString())
+                        .setPositiveButton("关闭", null)
+                        .show();
+            });
+        }, "dsh-log-reader").start();
+    }
+
+    private static String readTail(java.io.File file, int maxLines) {
+        if (!file.isFile()) {
+            return null;
+        }
+        try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "r")) {
+            long len = raf.length();
+            int take = (int) Math.min(len, 64 * 1024);
+            byte[] buf = new byte[take];
+            raf.seek(Math.max(0, len - take));
+            raf.readFully(buf);
+            String[] parts = new String(buf, java.nio.charset.StandardCharsets.UTF_8).split("\n");
+            int from = Math.max(0, parts.length - maxLines);
+            StringBuilder sb = new StringBuilder();
+            for (int i = from; i < parts.length; i++) {
+                if (sb.length() > 0) {
+                    sb.append('\n');
+                }
+                sb.append(parts[i]);
+            }
+            return sb.toString();
+        } catch (IOException e) {
+            return null;
+        }
     }
 
     /** 渲染进度：-1 表示不确定进度。 */

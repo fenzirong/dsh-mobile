@@ -81,6 +81,10 @@ JSEOF
     return 1
 }
 
+# apt 的超时与重试：默认没有超时，遇到半死连接会无限等待，
+# 表现就是界面一直停在「正在安装 Node.js 与 npm」。
+APT_OPTS="-o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=3"
+
 step check
 
 if [ -n "$MIRROR" ]; then
@@ -91,18 +95,20 @@ fi
 
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
     step apt-update
-    apt-get update -y >> "$LOG" 2>&1 || { step 'error:apt-update'; exit 1; }
+    apt-get $APT_OPTS update >> "$LOG" 2>&1 < /dev/null || { step 'error:apt-update'; exit 1; }
 
     step install-node
     # --no-install-recommends：npm 是 nodejs-lts 的 Recommends，但我们显式装了，
     # 少拉一个包就少一次 .deb 改写。
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        nodejs-lts npm >> "$LOG" 2>&1 || { step 'error:install-node'; exit 1; }
+    # 配置文件冲突一律用本地版本，避免任何交互式提问。
+    DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTS install -y --no-install-recommends \
+        -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+        nodejs-lts npm >> "$LOG" 2>&1 < /dev/null || { step 'error:install-node'; exit 1; }
 fi
 
 if ! command -v dsh >/dev/null 2>&1; then
     step install-dsh
-    npm install -g @deepseek-ai/dsh >> "$LOG" 2>&1 || { step 'error:install-dsh'; exit 1; }
+    npm install -g @deepseek-ai/dsh >> "$LOG" 2>&1 < /dev/null || { step 'error:install-dsh'; exit 1; }
 fi
 
 if ! command -v dsh >/dev/null 2>&1; then

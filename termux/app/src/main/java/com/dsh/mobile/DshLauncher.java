@@ -51,6 +51,9 @@ public final class DshLauncher {
 
         /** 启动器自身的问题（非脚本报错）。 */
         void onProblem(String message);
+
+        /** 启动日志的最新几行，用于在界面上显示实时进度。 */
+        void onDetail(String logTail);
     }
 
     private final Context context;
@@ -61,6 +64,7 @@ public final class DshLauncher {
     private boolean active;
     private long deadline;
     private String lastStatus = "";
+    private String lastDetail = "";
 
     public DshLauncher(Context context) {
         this.context = context.getApplicationContext();
@@ -106,6 +110,7 @@ public final class DshLauncher {
         this.active = true;
         this.deadline = System.currentTimeMillis() + OVERALL_TIMEOUT_MS;
         this.lastStatus = "";
+        this.lastDetail = "";
 
         io.execute(() -> {
             String error = prepareScript();
@@ -157,6 +162,7 @@ public final class DshLauncher {
         io.execute(() -> {
             final String status = readTrimmed(STATUS);
             final String url = readUrl();
+            final String tail = readTail(BOOTLOG, 6);
             main.post(() -> {
                 if (!active) {
                     return;
@@ -172,6 +178,10 @@ public final class DshLauncher {
                         active = false;
                         return;
                     }
+                }
+                if (listener != null && tail != null && !tail.equals(lastDetail)) {
+                    lastDetail = tail;
+                    listener.onDetail(tail);
                 }
                 if (url != null) {
                     active = false;
@@ -265,6 +275,27 @@ public final class DshLauncher {
             last = last.substring(0, last.length() - 1);
         }
         return last;
+    }
+
+    /** 读文件末尾若干行。 */
+    private String readTail(String path, int lines) {
+        String all = readAll(path);
+        if (all == null || all.isEmpty()) {
+            return null;
+        }
+        String[] parts = all.split("\n");
+        int from = Math.max(0, parts.length - lines);
+        StringBuilder sb = new StringBuilder();
+        for (int i = from; i < parts.length; i++) {
+            if (parts[i].isEmpty()) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append(parts[i]);
+        }
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     private String readTrimmed(String path) {
