@@ -106,9 +106,21 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
             > "$PREFIX/etc/apt/apt.conf.d/99dsh-prefix" 2>/dev/null
         echo "apt 钩子未注册，已补写 99dsh-prefix" >> "$LOG"
     fi
+    # 上次失败可能留下半装状态，先修一遍（失败也无所谓）
+    dpkg --configure -a >> "$LOG" 2>&1 || true
+
     # 清掉旧缓存：钩子要解包 + 重新打包，峰值占用约 2 倍包体积，空间不足会失败。
     apt-get clean >> "$LOG" 2>&1 || true
-    echo "free space before install: $(df -Pk "$PREFIX" 2>/dev/null | tail -1)" >> "$LOG"
+
+    # 空间预检：nodejs + npm + 依赖装完约 110MB，缓存峰值约 100MB
+    set -- $(df -Pk "$PREFIX" 2>/dev/null | tail -1)
+    avail_kb=${4:-0}
+    echo "free space before install: ${avail_kb}KB" >> "$LOG"
+    if [ "$avail_kb" -lt 250000 ]; then
+        echo "剩余空间 ${avail_kb}KB 不足 250000KB，中止安装" >> "$LOG"
+        step 'error:no-space'
+        exit 1
+    fi
 
     # --no-install-recommends：npm 是 nodejs-lts 的 Recommends，但我们显式装了，
     # 少拉一个包就少一次 .deb 改写。
@@ -121,6 +133,8 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
         step 'error:install-node'
         exit 1
     fi
+    # 装完立刻清缓存，把空间还回去
+    apt-get clean >> "$LOG" 2>&1 || true
 fi
 
 if ! command -v dsh >/dev/null 2>&1; then

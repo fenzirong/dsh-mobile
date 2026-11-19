@@ -244,6 +244,9 @@ public class DshActivity extends AppCompatActivity {
             setStatus(statusText(code));
             if (code.startsWith("error:") || code.equals("stopped")) {
                 resetStartButton();
+                if (code.startsWith("error:")) {
+                    appendErrorDetail();
+                }
             }
         }
 
@@ -294,6 +297,8 @@ public class DshActivity extends AppCompatActivity {
                 return "正在启动 DSH 主机…";
             case "stopped":
                 return "DSH 主机已停止。可再次点「一键启动」。";
+            case "error:no-space":
+                return "存储空间不足（安装需要约 250 MB）。\n请清理手机空间后重试。";
             default:
                 if (code.startsWith("error:")) {
                     return "启动失败（" + code.substring(6) + "）。\n"
@@ -812,6 +817,41 @@ public class DshActivity extends AppCompatActivity {
 
     private void setStatus(String message) {
         statusView.setText(message);
+    }
+
+    /** 把 dsh-boot.err 里最像"原因"的一行追加到状态文字，省得用户去翻日志。 */
+    private void appendErrorDetail() {
+        new Thread(() -> {
+            String detail = readTail(new java.io.File(DshLauncher.PREFIX + "/tmp/dsh-boot.err"), 20);
+            if (detail == null || detail.trim().isEmpty()) {
+                return;
+            }
+            String picked = null;
+            for (String line : detail.split("\n")) {
+                String t = line.trim();
+                if (t.isEmpty()) {
+                    continue;
+                }
+                String lower = t.toLowerCase();
+                if (lower.contains("error") || lower.contains("dpkg:")
+                        || lower.startsWith("e:") || lower.contains("no space")) {
+                    picked = t;
+                }
+            }
+            if (picked == null) {
+                for (String line : detail.split("\n")) {
+                    if (!line.trim().isEmpty()) {
+                        picked = line.trim();
+                    }
+                }
+            }
+            if (picked == null) {
+                return;
+            }
+            final String msg = picked;
+            runOnUiThread(() -> statusView.setText(
+                    statusView.getText() + "\n\n" + msg));
+        }, "dsh-err").start();
     }
 
     /** 显示启动日志的最后几行，让"看起来卡住"其实能看出在下什么。 */

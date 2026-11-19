@@ -250,6 +250,10 @@ apt 下载 .deb → DPkg::Pre-Invoke 触发 dsh-fixdeb
 
 钩子日志：`$PREFIX/tmp/dsh-fixdeb.log`。
 
+**安装前的自检**：先 `dpkg --configure -a` 修复上次失败留下的半装状态，再 `apt-get clean`
+腾空间，然后检查剩余空间（低于 250 MB 直接报 `error:no-space` 并中止，而不是解包到一半
+才失败）。装完立刻再 clean 一次把空间还回去。
+
 **工具链随版本刷新**：bootstrap 只在首次安装时解压，升级 APK 不会刷新 `$PREFIX`。
 从旧版本升上来的用户，prefix 里可能缺少 `dshfix` / `dsh-fixdeb` / apt 钩子配置，
 表现为 dpkg 报 `unable to execute ... preinst: Permission denied`。
