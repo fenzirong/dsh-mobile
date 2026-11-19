@@ -250,6 +250,12 @@ apt 下载 .deb → DPkg::Pre-Invoke 触发 dsh-fixdeb
 
 钩子日志：`$PREFIX/tmp/dsh-fixdeb.log`。
 
+**工具链随版本刷新**：bootstrap 只在首次安装时解压，升级 APK 不会刷新 `$PREFIX`。
+从旧版本升上来的用户，prefix 里可能缺少 `dshfix` / `dsh-fixdeb` / apt 钩子配置，
+表现为 dpkg 报 `unable to execute ... preinst: Permission denied`。
+`BootstrapTooling` 按 versionCode 打标记，版本变了就把这三个文件从内嵌 bootstrap 重新解出来；
+启动脚本还会在 `apt-config dump` 里确认钩子已注册，缺了就补写一份。
+
 **失败处理**：改写失败时钩子会**删掉那个 .deb**，而不是留着原包。否则 dpkg 会拿到未改写
 前缀的包、往 `/data/data/com.termux/` 写而失败，报出一堆看不懂的
 `Errors were encountered while processing: .../xxx.deb`。删掉后 apt 会明确报错，

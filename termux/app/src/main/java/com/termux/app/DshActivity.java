@@ -133,6 +133,7 @@ public class DshActivity extends AppCompatActivity {
                 progressModel.indeterminate();
                 setStatus("正在初始化 Termux 运行环境，请稍候…");
                 TermuxInstaller.setupBootstrapIfNeeded(this, () -> runOnUiThread(() -> {
+                    BootstrapTooling.ensure(this);
                     bootstrapReady = true;
                     startButton.setEnabled(true);
                     progressModel.reset();
@@ -145,6 +146,8 @@ public class DshActivity extends AppCompatActivity {
             setStatus("环境检查失败：" + e.getMessage());
             return;
         }
+        // 升级上来的用户 prefix 里可能是旧版工具链，按 versionCode 刷新一次
+        BootstrapTooling.ensure(this);
         bootstrapReady = true;
         startButton.setEnabled(true);
         autoReuse();

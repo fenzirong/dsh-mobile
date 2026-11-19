@@ -98,6 +98,14 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
     apt-get $APT_OPTS update >> "$LOG" 2>&1 < /dev/null || { step 'error:apt-update'; exit 1; }
 
     step install-node
+    # 钩子没注册的话，dpkg 会拿到未改写前缀的包而失败（preinst: Permission denied）。
+    # 这里自愈：缺配置就补写一份。
+    if ! apt-config dump 2>/dev/null | grep -q "DPkg::Pre-Invoke"; then
+        mkdir -p "$PREFIX/etc/apt/apt.conf.d" 2>/dev/null
+        printf 'DPkg::Pre-Invoke { "%s/bin/dsh-fixdeb"; };\n' "$PREFIX" \
+            > "$PREFIX/etc/apt/apt.conf.d/99dsh-prefix" 2>/dev/null
+        echo "apt 钩子未注册，已补写 99dsh-prefix" >> "$LOG"
+    fi
     # 清掉旧缓存：钩子要解包 + 重新打包，峰值占用约 2 倍包体积，空间不足会失败。
     apt-get clean >> "$LOG" 2>&1 || true
     echo "free space before install: $(df -Pk "$PREFIX" 2>/dev/null | tail -1)" >> "$LOG"
