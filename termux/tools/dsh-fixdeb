@@ -14,8 +14,13 @@
 #
 # 性能要点：
 #   * 重打包用 gzip -1 而不是 xz。实测 nodejs 包 xz -6 要 45.8s，gzip -1 只要 1.3s。
-#     这个 .deb 只是给 dpkg 立刻消费的临时产物，体积变大无所谓。
 #   * 没有实际改动（既没改名也没改写任何文件）时直接跳过重打包，用原包。
+#
+# 失败处理（重要）：
+#   改写失败时**必须删掉这个 .deb**。否则 dpkg 会拿到未改写前缀的原包，
+#   往 /data/data/com.termux/ 写而失败，报出一堆看不懂的
+#   "Errors were encountered while processing: .../xxx.deb"。
+#   删掉后 apt 会明确报"找不到包"，日志里也能看到具体原因。
 set -u
 
 PREFIX=/data/data/com.dshapp/files/usr
@@ -28,6 +33,17 @@ LOG="$PREFIX/tmp/dsh-fixdeb.log"
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*" >> "$LOG" 2>/dev/null; }
 
+# 剩余空间（KB）。磁盘不足是重打包失败最常见的原因。
+free_kb() {
+    local line
+    line=$(df -Pk "$PREFIX" 2>/dev/null | tail -1)
+    # shellcheck disable=SC2086
+    set -- $line
+    echo "${4:-0}"
+}
+
+log "hook start, free=$(free_kb)KB"
+
 shopt -s nullglob
 for deb in "$CACHE"/*.deb; do
     name="${deb##*/}"
@@ -37,9 +53,10 @@ for deb in "$CACHE"/*.deb; do
 
     t0=$(date +%s%N 2>/dev/null || echo 0)
 
-    if ! dpkg-deb -R "$deb" "$work" 2>/dev/null; then
-        log "skip (extract failed): $name"
+    if ! dpkg-deb -R "$deb" "$work" 2>>"$LOG"; then
+        log "EXTRACT FAILED, dropping unpatched package: $name"
         rm -rf "$work"
+        rm -f "$deb"
         continue
     fi
 
@@ -62,15 +79,28 @@ for deb in "$CACHE"/*.deb; do
     chmod 755 "$work"/DEBIAN/preinst "$work"/DEBIAN/postinst \
               "$work"/DEBIAN/prerm "$work"/DEBIAN/postrm 2>/dev/null
 
-    if dpkg-deb -b -Zgzip -z1 --root-owner-group "$work" "$deb.new" >/dev/null 2>&1; then
+    # 依次降级：带 root-owner-group → 不带 → 默认压缩。
+    # 某些 dpkg 版本或特殊包（带版本号 .so 符号链接的库）会在某一步失败。
+    ok=0
+    if dpkg-deb -b -Zgzip -z1 --root-owner-group "$work" "$deb.new" 2>>"$LOG"; then
+        ok=1
+    elif dpkg-deb -b -Zgzip -z1 "$work" "$deb.new" 2>>"$LOG"; then
+        ok=1
+    elif dpkg-deb -b "$work" "$deb.new" 2>>"$LOG"; then
+        ok=1
+    fi
+
+    if [ "$ok" = "1" ]; then
         mv -f "$deb.new" "$deb" 2>/dev/null || rm -f "$deb.new"
         t1=$(date +%s%N 2>/dev/null || echo 0)
-        log "rewritten in $(( (t1 - t0) / 1000000 ))ms, $fixed files: $name"
+        log "rewritten in $(( (t1 - t0) / 1000000 ))ms, $fixed files, free=$(free_kb)KB: $name"
     else
         rm -f "$deb.new"
-        log "skip (repack failed): $name"
+        log "REPACK FAILED, dropping unpatched package: $name (free=$(free_kb)KB)"
+        rm -f "$deb"
     fi
     rm -rf "$work"
 done
 
+log "hook done, free=$(free_kb)KB"
 exit 0

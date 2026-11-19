@@ -98,12 +98,21 @@ if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
     apt-get $APT_OPTS update >> "$LOG" 2>&1 < /dev/null || { step 'error:apt-update'; exit 1; }
 
     step install-node
+    # 清掉旧缓存：钩子要解包 + 重新打包，峰值占用约 2 倍包体积，空间不足会失败。
+    apt-get clean >> "$LOG" 2>&1 || true
+    echo "free space before install: $(df -Pk "$PREFIX" 2>/dev/null | tail -1)" >> "$LOG"
+
     # --no-install-recommends：npm 是 nodejs-lts 的 Recommends，但我们显式装了，
     # 少拉一个包就少一次 .deb 改写。
     # 配置文件冲突一律用本地版本，避免任何交互式提问。
-    DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTS install -y --no-install-recommends \
-        -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
-        nodejs-lts npm >> "$LOG" 2>&1 < /dev/null || { step 'error:install-node'; exit 1; }
+    if ! DEBIAN_FRONTEND=noninteractive apt-get $APT_OPTS install -y --no-install-recommends \
+            -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
+            nodejs-lts npm >> "$LOG" 2>&1 < /dev/null; then
+        # 把失败原因单独留一份，方便在「查看日志」里一眼看到
+        tail -n 15 "$LOG" > "$TMP/dsh-boot.err" 2>/dev/null || true
+        step 'error:install-node'
+        exit 1
+    fi
 fi
 
 if ! command -v dsh >/dev/null 2>&1; then

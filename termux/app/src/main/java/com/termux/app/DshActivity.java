@@ -825,14 +825,18 @@ public class DshActivity extends AppCompatActivity {
     private void showLogDialog() {
         new Thread(() -> {
             final String text = readTail(new java.io.File(DshLauncher.PREFIX + "/tmp/dsh-boot.log"), 200);
-            final String fix = readTail(new java.io.File(DshLauncher.PREFIX + "/tmp/dsh-fixdeb.log"), 40);
+            final String err = readTail(new java.io.File(DshLauncher.PREFIX + "/tmp/dsh-boot.err"), 30);
+            final String fix = readTail(new java.io.File(DshLauncher.PREFIX + "/tmp/dsh-fixdeb.log"), 60);
             runOnUiThread(() -> {
                 StringBuilder sb = new StringBuilder();
-                if (text != null) {
-                    sb.append("== dsh-boot.log ==\n").append(text).append("\n\n");
+                if (err != null) {
+                    sb.append("== 失败原因 (dsh-boot.err) ==\n").append(err).append("\n\n");
                 }
                 if (fix != null) {
-                    sb.append("== dsh-fixdeb.log ==\n").append(fix);
+                    sb.append("== 包改写 (dsh-fixdeb.log) ==\n").append(fix).append("\n\n");
+                }
+                if (text != null) {
+                    sb.append("== 启动日志 (dsh-boot.log) ==\n").append(text);
                 }
                 if (sb.length() == 0) {
                     sb.append("暂无日志。");

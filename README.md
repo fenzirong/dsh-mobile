@@ -250,6 +250,14 @@ apt 下载 .deb → DPkg::Pre-Invoke 触发 dsh-fixdeb
 
 钩子日志：`$PREFIX/tmp/dsh-fixdeb.log`。
 
+**失败处理**：改写失败时钩子会**删掉那个 .deb**，而不是留着原包。否则 dpkg 会拿到未改写
+前缀的包、往 `/data/data/com.termux/` 写而失败，报出一堆看不懂的
+`Errors were encountered while processing: .../xxx.deb`。删掉后 apt 会明确报错，
+日志里也能看到具体原因（解包失败 / 重打包失败 / 剩余空间）。
+
+重打包按 `-Zgzip -z1 --root-owner-group` → `-Zgzip -z1` → 默认压缩 依次降级，
+兼容不同 dpkg 版本与带版本号 `.so` 符号链接的库包。
+
 > 局限：被压缩的文件（如 `.gz` man page、`.pyc`）里的路径不会被改写，属于非关键内容；
 > 若某个包解包或重打包失败，钩子会跳过它并记日志，该包可能无法运行。
 
